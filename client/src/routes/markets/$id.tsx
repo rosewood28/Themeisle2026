@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 function MarketDetailPage() {
   const { id } = useParams({ from: "/markets/$id" });
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, updateUser } = useAuth();
   const [market, setMarket] = useState<Market | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +58,11 @@ function MarketDetailPage() {
     try {
       setIsBetting(true);
       setError(null);
-      await api.placeBet(marketId, selectedOutcomeId, parsedBetAmount);
+      const placedBet = await api.placeBet(marketId, selectedOutcomeId, parsedBetAmount);
+      updateUser((currentUser) => ({
+        ...currentUser,
+        balance: placedBet.userBalance,
+      }));
       setBetAmount("");
       // Reload market to show updated odds
       const updated = await api.getMarket(marketId);
@@ -150,7 +154,11 @@ function MarketDetailPage() {
                 )}
               </div>
               <Badge variant={market.status === "active" ? "default" : "secondary"}>
-                {market.status === "active" ? "Active" : "Resolved"}
+                {market.status === "active"
+                  ? "Active"
+                  : market.status === "archived"
+                    ? "Archived"
+                    : "Resolved"}
               </Badge>
             </div>
           </CardHeader>
@@ -296,10 +304,14 @@ function MarketDetailPage() {
               </Card>
             )}
 
-            {market.status === "resolved" && (
+            {(market.status === "resolved" || market.status === "archived") && (
               <Card>
                 <CardContent className="py-6">
-                  <p className="text-muted-foreground">This market has been resolved.</p>
+                  <p className="text-muted-foreground">
+                    {market.status === "archived"
+                      ? "This market was archived and all bettors were refunded."
+                      : "This market has been resolved."}
+                  </p>
                 </CardContent>
               </Card>
             )}

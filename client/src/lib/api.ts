@@ -5,14 +5,14 @@ export interface Market {
   id: number;
   title: string;
   description?: string;
-  status: "active" | "resolved";
+  status: "active" | "resolved" | "archived";
   creator?: string;
   outcomes: Array<MarketOutcome>;
   totalMarketBets: number;
 }
 
 export interface MarketsListQuery {
-  status?: "active" | "resolved";
+  status?: "active" | "resolved" | "archived";
   sortBy?: "createdAt" | "totalBets" | "participants";
   sortDir?: "asc" | "desc";
   page?: number;
@@ -45,12 +45,15 @@ export interface User {
   token: string;
 }
 
+export type CurrentUser = Omit<User, "token">;
+
 export interface Bet {
   id: number;
   userId: number;
   marketId: number;
   outcomeId: number;
   amount: number;
+  userBalance: number;
   createdAt: string;
 }
 
@@ -162,6 +165,10 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
+  }
+
+  async getCurrentUser(): Promise<CurrentUser> {
+    return this.request("/api/auth/me");
   }
 
   // Markets endpoints

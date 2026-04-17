@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { api } from "./api";
 import type { User } from "./api";
 
 interface AuthContextType {
@@ -6,6 +7,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (user: User) => void;
   logout: () => void;
+  updateUser: (updater: (user: User) => User) => void;
+  refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -54,6 +57,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("auth_user");
   };
 
+  const updateUser = (updater: (currentUser: User) => User) => {
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser;
+      const nextUser = updater(currentUser);
+      localStorage.setItem("auth_token", nextUser.token);
+      localStorage.setItem(
+        "auth_user",
+        JSON.stringify({
+          id: nextUser.id,
+          username: nextUser.username,
+          email: nextUser.email,
+          role: nextUser.role,
+          balance: nextUser.balance,
+        }),
+      );
+      return nextUser;
+    });
+  };
+
+  const refreshUser = async () => {
+    if (!user) return;
+
+    try {
+      const latest = await api.getCurrentUser();
+      updateUser((currentUser) => ({
+        ...currentUser,
+        ...latest,
+      }));
+    } catch {
+      // Keep existing session data; transient failures shouldn't force logout.
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    void refreshUser();
+
+    const intervalId = window.setInterval(() => {
+      void refreshUser();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [user?.id]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -61,6 +111,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        updateUser,
+        refreshUser,
         isAuthenticated: !!user,
       }}
     >

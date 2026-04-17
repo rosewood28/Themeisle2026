@@ -20,7 +20,11 @@ export function MarketCard({ market }: MarketCardProps) {
             <CardDescription>By: {market.creator || "Unknown"}</CardDescription>
           </div>
           <Badge variant={market.status === "active" ? "default" : "secondary"}>
-            {market.status === "active" ? "Active" : "Resolved"}
+            {market.status === "active"
+              ? "Active"
+              : market.status === "archived"
+                ? "Archived"
+                : "Resolved"}
           </Badge>
         </div>
       </CardHeader>
@@ -53,7 +57,7 @@ export function MarketCard({ market }: MarketCardProps) {
 
         {/* Action Button */}
         <Button className="w-full" onClick={() => navigate({ to: `/markets/${market.id}` })}>
-          {market.status === "active" ? "Place Bet" : "View Results"}
+          {market.status === "active" ? "Place Bet" : "View Details"}
         </Button>
       </CardContent>
     </Card>

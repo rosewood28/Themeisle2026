@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql, desc, or } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, or, isNull, isNotNull } from "drizzle-orm";
 import db from "../db";
 import { usersTable, marketsTable, marketOutcomesTable, betsTable } from "../db/schema";
 import { hashPassword, verifyPassword } from "../lib/auth";
@@ -142,7 +142,7 @@ export async function handleCreateMarket(context: any) {
 }
 
 type ListMarketsQuery = {
-  status?: "active" | "resolved";
+  status?: "active" | "resolved" | "archived";
   sortBy?: "createdAt" | "totalBets" | "participants";
   sortDir?: "asc" | "desc";
   page?: number;
@@ -152,7 +152,7 @@ type ListMarketsQuery = {
 type EnrichedMarket = {
   id: number;
   title: string;
-  status: "active" | "resolved";
+  status: "active" | "resolved" | "archived";
   creator?: string;
   outcomes: { id: number; title: string; odds: number; totalBets: number }[];
   totalMarketBets: number;
@@ -170,8 +170,15 @@ export async function handleListMarkets(context: any) {
   const pageSize = Math.min(Math.max(requestedPageSize ?? 20, 1), 100);
   const page = Math.max(requestedPage ?? 1, 1);
 
+  const marketWhere =
+    statusFilter === "active"
+      ? eq(marketsTable.status, "active")
+      : statusFilter === "archived"
+        ? and(eq(marketsTable.status, "resolved"), isNull(marketsTable.resolvedOutcomeId))
+        : and(eq(marketsTable.status, "resolved"), isNotNull(marketsTable.resolvedOutcomeId));
+
   const markets = await db.query.marketsTable.findMany({
-    where: eq(marketsTable.status, statusFilter),
+    where: marketWhere,
     with: {
       creator: {
         columns: { username: true },
@@ -240,7 +247,7 @@ export async function handleListMarkets(context: any) {
     return {
       id: market.id,
       title: market.title,
-      status: market.status,
+      status: market.status === "resolved" && market.resolvedOutcomeId === null ? "archived" : market.status,
       creator: market.creator?.username,
       outcomes: market.outcomes.map((outcome) => {
         const outcomeBets = totalsByOutcome.get(outcome.id) ?? 0;
@@ -354,7 +361,7 @@ export async function handleGetMarket(context: any) {
     id: market.id,
     title: market.title,
     description: market.description,
-    status: market.status,
+    status: market.status === "resolved" && market.resolvedOutcomeId === null ? "archived" : market.status,
     creator: market.creator?.username,
     outcomes: market.outcomes.map((outcome) => {
       const outcomeBets = betsPerOutcome.find((b) => b.outcomeId === outcome.id)?.totalBets || 0;
@@ -369,6 +376,23 @@ export async function handleGetMarket(context: any) {
       };
     }),
     totalMarketBets,
+  };
+}
+
+export async function handleGetCurrentUser(context: any) {
+  const { user, set } = context;
+
+  if (!user) {
+    set.status = 401;
+    return { error: "Unauthorized" };
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    balance: user.balance,
   };
 }
 
@@ -433,6 +457,10 @@ export async function handlePlaceBet(context: any) {
     .set({ balance: sql`${usersTable.balance} - ${numericAmount}` })
     .where(eq(usersTable.id, user.id));
 
+  const updatedUser = await db.query.usersTable.findFirst({
+    where: eq(usersTable.id, user.id),
+  });
+
   set.status = 201;
   return {
     id: createdBet.id,
@@ -440,6 +468,7 @@ export async function handlePlaceBet(context: any) {
     marketId: createdBet.marketId,
     outcomeId: createdBet.outcomeId,
     amount: createdBet.amount,
+    userBalance: updatedUser?.balance ?? user.balance - numericAmount,
   };
 }
 

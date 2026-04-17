@@ -13,7 +13,7 @@ function DashboardPage() {
   const [markets, setMarkets] = useState<Array<Market>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<"active" | "resolved">("active");
+  const [status, setStatus] = useState<"active" | "resolved" | "archived">("active");
   const [sortBy, setSortBy] = useState<"createdAt" | "totalBets" | "participants">("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -195,6 +195,15 @@ function DashboardPage() {
             }}
           >
             Resolved Markets
+          </Button>
+          <Button
+            variant={status === "archived" ? "default" : "outline"}
+            onClick={() => {
+              setStatus("archived");
+              setPage(1);
+            }}
+          >
+            Archived Markets
           </Button>
           <select
             value={sortBy}

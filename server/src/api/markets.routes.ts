@@ -15,7 +15,9 @@ export const marketRoutes = new Elysia({ prefix: "/api/markets" })
   .use(authMiddleware)
   .get("/", handleListMarkets, {
     query: t.Object({
-      status: t.Optional(t.Union([t.Literal("active"), t.Literal("resolved")])),
+      status: t.Optional(
+        t.Union([t.Literal("active"), t.Literal("resolved"), t.Literal("archived")]),
+      ),
       sortBy: t.Optional(t.Union([t.Literal("createdAt"), t.Literal("totalBets"), t.Literal("participants")])),
       sortDir: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
       page: t.Optional(t.Numeric()),
