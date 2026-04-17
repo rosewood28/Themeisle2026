@@ -30,6 +30,31 @@ function DashboardPage() {
   );
   const [resolvingMarketId, setResolvingMarketId] = useState<number | null>(null);
 
+  const applyMarketsPayload = (data: Array<Market> | MarketsListResponse) => {
+    if (Array.isArray(data)) {
+      setMarkets(data);
+      setPagination({
+        page: 1,
+        pageSize: data.length,
+        total: data.length,
+        totalPages: data.length > 0 ? 1 : 0,
+        hasNext: false,
+        hasPrev: false,
+      });
+      return;
+    }
+
+    setMarkets(data.items);
+    setPagination({
+      page: data.page,
+      pageSize: data.pageSize,
+      total: data.total,
+      totalPages: data.totalPages,
+      hasNext: data.hasNext,
+      hasPrev: data.hasPrev,
+    });
+  };
+
   const loadMarkets = async (showLoading = true) => {
     try {
       if (showLoading) {
@@ -43,28 +68,7 @@ function DashboardPage() {
         page,
         pageSize: 20,
       });
-
-      if (Array.isArray(data)) {
-        setMarkets(data);
-        setPagination({
-          page: 1,
-          pageSize: data.length,
-          total: data.length,
-          totalPages: data.length > 0 ? 1 : 0,
-          hasNext: false,
-          hasPrev: false,
-        });
-      } else {
-        setMarkets(data.items);
-        setPagination({
-          page: data.page,
-          pageSize: data.pageSize,
-          total: data.total,
-          totalPages: data.totalPages,
-          hasNext: data.hasNext,
-          hasPrev: data.hasPrev,
-        });
-      }
+      applyMarketsPayload(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load markets");
     } finally {
@@ -123,12 +127,39 @@ function DashboardPage() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const intervalId = window.setInterval(() => {
-      loadMarkets(false);
-    }, 5000);
+    const streamUrl = api.getMarketsStreamUrl({
+      status,
+      sortBy,
+      sortDir,
+      page,
+      pageSize: 20,
+    });
+    const eventSource = new EventSource(streamUrl);
+    let fallbackIntervalId: number | null = null;
+
+    eventSource.addEventListener("markets", (event) => {
+      const parsed = JSON.parse((event as MessageEvent).data) as {
+        data: Array<Market> | MarketsListResponse;
+        ts: number;
+      };
+      setError(null);
+      applyMarketsPayload(parsed.data);
+      setIsLoading(false);
+    });
+
+    eventSource.addEventListener("error", () => {
+      if (fallbackIntervalId === null) {
+        fallbackIntervalId = window.setInterval(() => {
+          void loadMarkets(false);
+        }, 5000);
+      }
+    });
 
     return () => {
-      window.clearInterval(intervalId);
+      eventSource.close();
+      if (fallbackIntervalId !== null) {
+        window.clearInterval(fallbackIntervalId);
+      }
     };
   }, [isAuthenticated, status, sortBy, sortDir, page]);
 
@@ -299,7 +330,7 @@ function DashboardPage() {
                       <p className="text-xs font-medium text-amber-800">Admin Controls</p>
                       <Button
                         size="sm"
-                        variant="destructive"
+                        variant="outline"
                         disabled={resolvingMarketId === market.id}
                         onClick={() => handleAdminArchive(market.id)}
                       >

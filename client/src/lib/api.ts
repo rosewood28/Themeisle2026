@@ -185,6 +185,17 @@ class ApiClient {
     return this.request(`/api/markets?${params.toString()}`);
   }
 
+  getMarketsStreamUrl(query: MarketsListQuery = {}): string {
+    const params = new URLSearchParams();
+    const status = query.status ?? "active";
+    params.set("status", status);
+    if (query.sortBy) params.set("sortBy", query.sortBy);
+    if (query.sortDir) params.set("sortDir", query.sortDir);
+    if (query.page !== undefined) params.set("page", String(query.page));
+    if (query.pageSize !== undefined) params.set("pageSize", String(query.pageSize));
+    return `${this.baseUrl}/api/markets/stream?${params.toString()}`;
+  }
+
   async getMarket(id: number): Promise<Market> {
     return this.request(`/api/markets/${id}`);
   }
@@ -217,7 +228,7 @@ class ApiClient {
 
   async archiveMarket(marketId: number): Promise<{
     marketId: number;
-    status: "resolved";
+    status: "archived";
     resolutionType: "archived";
     totalRefunded: number;
     refunds: Array<{ userId: number; amount: number }>;

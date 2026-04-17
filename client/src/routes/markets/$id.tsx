@@ -306,7 +306,7 @@ function MarketDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <Button
-                    variant="destructive"
+                    variant="outline"
                     className="w-full justify-start"
                     disabled={isResolving}
                     onClick={handleArchiveMarket}

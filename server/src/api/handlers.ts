@@ -329,6 +329,63 @@ export async function handleListMarkets(context: any) {
   };
 }
 
+export async function handleMarketsStream(context: any) {
+  const { query, request } = context as { query: ListMarketsQuery; request: Request };
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      let updateTimer: ReturnType<typeof setInterval> | null = null;
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+
+      const closeStream = () => {
+        if (closed) return;
+        closed = true;
+        if (updateTimer) clearInterval(updateTimer);
+        if (pingTimer) clearInterval(pingTimer);
+        controller.close();
+      };
+
+      const sendEvent = (eventName: string, payload: unknown) => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(`event: ${eventName}\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      };
+
+      const sendMarkets = async () => {
+        try {
+          const data = await handleListMarkets({ query });
+          sendEvent("markets", { data, ts: Date.now() });
+        } catch (error) {
+          sendEvent("error", {
+            message: error instanceof Error ? error.message : "Failed to stream markets",
+          });
+        }
+      };
+
+      void sendMarkets();
+      updateTimer = setInterval(() => {
+        void sendMarkets();
+      }, 5000);
+      pingTimer = setInterval(() => {
+        sendEvent("ping", { ts: Date.now() });
+      }, 20000);
+
+      request.signal.addEventListener("abort", closeStream);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
 export async function handleGetMarket(context: any) {
   const { params, set } = context;
   const market = await db.query.marketsTable.findFirst({
