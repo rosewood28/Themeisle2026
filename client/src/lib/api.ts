@@ -52,6 +52,43 @@ export interface Bet {
   createdAt: string;
 }
 
+export interface UserActiveBet {
+  betId: number;
+  marketId: number;
+  marketTitle: string;
+  outcomeId: number;
+  outcomeTitle: string;
+  amount: number;
+  currentOdds: number;
+  placedAt: string;
+}
+
+export interface UserResolvedBet {
+  betId: number;
+  marketId: number;
+  marketTitle: string;
+  outcomeId: number;
+  outcomeTitle: string;
+  amount: number;
+  result: "won" | "lost";
+  placedAt: string;
+}
+
+export interface PaginatedProfileList<T> {
+  items: Array<T>;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+export interface ProfileBetsResponse {
+  active: PaginatedProfileList<UserActiveBet>;
+  resolved: PaginatedProfileList<UserResolvedBet>;
+}
+
 // API Client
 class ApiClient {
   private baseUrl: string;
@@ -139,6 +176,24 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ outcomeId, amount }),
     });
+  }
+
+  async getProfileBets(query: {
+    activePage?: number;
+    activePageSize?: number;
+    resolvedPage?: number;
+    resolvedPageSize?: number;
+  }): Promise<ProfileBetsResponse> {
+    const params = new URLSearchParams();
+
+    if (query.activePage !== undefined) params.set("activePage", String(query.activePage));
+    if (query.activePageSize !== undefined) params.set("activePageSize", String(query.activePageSize));
+    if (query.resolvedPage !== undefined) params.set("resolvedPage", String(query.resolvedPage));
+    if (query.resolvedPageSize !== undefined) {
+      params.set("resolvedPageSize", String(query.resolvedPageSize));
+    }
+
+    return this.request(`/api/markets/profile/bets?${params.toString()}`);
   }
 }
 
