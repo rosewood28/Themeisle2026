@@ -1,7 +1,7 @@
-import { eq, and, inArray, sql, desc } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, or } from "drizzle-orm";
 import db from "../db";
 import { usersTable, marketsTable, marketOutcomesTable, betsTable } from "../db/schema";
-import { hashPassword, verifyPassword, type AuthTokenPayload } from "../lib/auth";
+import { hashPassword, verifyPassword } from "../lib/auth";
 import {
   validateRegistration,
   validateLogin,
@@ -9,19 +9,8 @@ import {
   validateBet,
 } from "../lib/validation";
 
-type JwtSigner = {
-  sign: (payload: AuthTokenPayload) => Promise<string>;
-};
-
-export async function handleRegister({
-  body,
-  jwt,
-  set,
-}: {
-  body: { username: string; email: string; password: string };
-  jwt: JwtSigner;
-  set: { status: number };
-}) {
+export async function handleRegister(context: any) {
+  const { body, jwt, set } = context;
   const { username, email, password } = body;
   const errors = validateRegistration(username, email, password);
 
@@ -31,7 +20,7 @@ export async function handleRegister({
   }
 
   const existingUser = await db.query.usersTable.findFirst({
-    where: (users, { or, eq }) => or(eq(users.email, email), eq(users.username, username)),
+    where: or(eq(usersTable.email, email), eq(usersTable.username, username)),
   });
 
   if (existingUser) {
@@ -42,27 +31,26 @@ export async function handleRegister({
   const passwordHash = await hashPassword(password);
 
   const newUser = await db.insert(usersTable).values({ username, email, passwordHash }).returning();
+  const createdUser = newUser[0];
 
-  const token = await jwt.sign({ userId: newUser[0].id });
+  if (!createdUser) {
+    set.status = 500;
+    return { error: "Failed to create user" };
+  }
+
+  const token = await jwt.sign({ userId: createdUser.id });
 
   set.status = 201;
   return {
-    id: newUser[0].id,
-    username: newUser[0].username,
-    email: newUser[0].email,
+    id: createdUser.id,
+    username: createdUser.username,
+    email: createdUser.email,
     token,
   };
 }
 
-export async function handleLogin({
-  body,
-  jwt,
-  set,
-}: {
-  body: { email: string; password: string };
-  jwt: JwtSigner;
-  set: { status: number };
-}) {
+export async function handleLogin(context: any) {
+  const { body, jwt, set } = context;
   const { email, password } = body;
   const errors = validateLogin(email, password);
 
@@ -90,15 +78,8 @@ export async function handleLogin({
   };
 }
 
-export async function handleCreateMarket({
-  body,
-  set,
-  user,
-}: {
-  body: { title: string; description?: string; outcomes: string[] };
-  set: { status: number };
-  user: typeof usersTable.$inferSelect;
-}) {
+export async function handleCreateMarket(context: any) {
+  const { body, set, user } = context;
   const { title, description, outcomes } = body;
   const errors = validateMarketCreation(title, description || "", outcomes);
 
@@ -115,12 +96,18 @@ export async function handleCreateMarket({
       createdBy: user.id,
     })
     .returning();
+  const createdMarket = market[0];
+
+  if (!createdMarket) {
+    set.status = 500;
+    return { error: "Failed to create market" };
+  }
 
   const outcomeIds = await db
     .insert(marketOutcomesTable)
     .values(
       outcomes.map((title: string, index: number) => ({
-        marketId: market[0].id,
+        marketId: createdMarket.id,
         title,
         position: index,
       })),
@@ -129,10 +116,10 @@ export async function handleCreateMarket({
 
   set.status = 201;
   return {
-    id: market[0].id,
-    title: market[0].title,
-    description: market[0].description,
-    status: market[0].status,
+    id: createdMarket.id,
+    title: createdMarket.title,
+    description: createdMarket.description,
+    status: createdMarket.status,
     outcomes: outcomeIds,
   };
 }
@@ -155,7 +142,8 @@ type EnrichedMarket = {
   participantCount: number;
 };
 
-export async function handleListMarkets({ query }: { query: ListMarketsQuery }) {
+export async function handleListMarkets(context: any) {
+  const { query } = context as { query: ListMarketsQuery };
   const statusFilter = query.status || "active";
   const sortBy = query.sortBy || "createdAt";
   const sortDir = query.sortDir || "desc";
@@ -312,13 +300,8 @@ export async function handleListMarkets({ query }: { query: ListMarketsQuery }) 
   };
 }
 
-export async function handleGetMarket({
-  params,
-  set,
-}: {
-  params: { id: number };
-  set: { status: number };
-}) {
+export async function handleGetMarket(context: any) {
+  const { params, set } = context;
   const market = await db.query.marketsTable.findFirst({
     where: eq(marketsTable.id, params.id),
     with: {
@@ -372,17 +355,8 @@ export async function handleGetMarket({
   };
 }
 
-export async function handlePlaceBet({
-  params,
-  body,
-  set,
-  user,
-}: {
-  params: { id: number };
-  body: { outcomeId: number; amount: number };
-  set: { status: number };
-  user: typeof usersTable.$inferSelect;
-}) {
+export async function handlePlaceBet(context: any) {
+  const { params, body, set, user } = context;
   const marketId = params.id;
   const { outcomeId, amount } = body;
   const errors = validateBet(amount);
@@ -424,14 +398,20 @@ export async function handlePlaceBet({
       amount: Number(amount),
     })
     .returning();
+  const createdBet = bet[0];
+
+  if (!createdBet) {
+    set.status = 500;
+    return { error: "Failed to place bet" };
+  }
 
   set.status = 201;
   return {
-    id: bet[0].id,
-    userId: bet[0].userId,
-    marketId: bet[0].marketId,
-    outcomeId: bet[0].outcomeId,
-    amount: bet[0].amount,
+    id: createdBet.id,
+    userId: createdBet.userId,
+    marketId: createdBet.marketId,
+    outcomeId: createdBet.outcomeId,
+    amount: createdBet.amount,
   };
 }
 
@@ -442,13 +422,8 @@ type ProfileBetsQuery = {
   resolvedPageSize?: number;
 };
 
-export async function handleGetProfileBets({
-  user,
-  query,
-}: {
-  user: typeof usersTable.$inferSelect;
-  query: ProfileBetsQuery;
-}) {
+export async function handleGetProfileBets(context: any) {
+  const { user, query } = context as { user: typeof usersTable.$inferSelect; query: ProfileBetsQuery };
   const activePageSize = Math.min(Math.max(query.activePageSize ?? 20, 1), 100);
   const resolvedPageSize = Math.min(Math.max(query.resolvedPageSize ?? 20, 1), 100);
   const activePage = Math.max(query.activePage ?? 1, 1);
