@@ -89,6 +89,13 @@ export interface ProfileBetsResponse {
   resolved: PaginatedProfileList<UserResolvedBet>;
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  userId: number;
+  username: string;
+  totalWinnings: number;
+}
+
 // API Client
 class ApiClient {
   private baseUrl: string;
@@ -194,6 +201,10 @@ class ApiClient {
     }
 
     return this.request(`/api/markets/profile/bets?${params.toString()}`);
+  }
+
+  async getLeaderboard(): Promise<Array<LeaderboardEntry>> {
+    return this.request("/api/markets/leaderboard");
   }
 }
 

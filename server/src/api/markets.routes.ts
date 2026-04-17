@@ -6,6 +6,7 @@ import {
   handleGetMarket,
   handlePlaceBet,
   handleGetProfileBets,
+  handleGetLeaderboard,
 } from "./handlers";
 
 export const marketRoutes = new Elysia({ prefix: "/api/markets" })
@@ -19,6 +20,7 @@ export const marketRoutes = new Elysia({ prefix: "/api/markets" })
       pageSize: t.Optional(t.Numeric()),
     }),
   })
+  .get("/leaderboard", handleGetLeaderboard)
   .get("/:id", handleGetMarket, {
     params: t.Object({
       id: t.Numeric(),

@@ -422,6 +422,104 @@ type ProfileBetsQuery = {
   resolvedPageSize?: number;
 };
 
+export async function handleGetLeaderboard() {
+  const resolvedBets = await db
+    .select({
+      userId: betsTable.userId,
+      amount: betsTable.amount,
+      outcomeId: betsTable.outcomeId,
+      marketId: betsTable.marketId,
+      resolvedOutcomeId: marketsTable.resolvedOutcomeId,
+    })
+    .from(betsTable)
+    .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
+    .where(eq(marketsTable.status, "resolved"));
+
+  if (resolvedBets.length === 0) {
+    return [];
+  }
+
+  const marketIds = Array.from(new Set(resolvedBets.map((bet) => bet.marketId)));
+  const winningOutcomeIds = Array.from(
+    new Set(
+      resolvedBets
+        .map((bet) => bet.resolvedOutcomeId)
+        .filter((outcomeId): outcomeId is number => outcomeId !== null),
+    ),
+  );
+
+  const totalByMarketRows = await db
+    .select({
+      marketId: betsTable.marketId,
+      totalBets: sql<number>`coalesce(sum(${betsTable.amount}), 0)`,
+    })
+    .from(betsTable)
+    .where(inArray(betsTable.marketId, marketIds))
+    .groupBy(betsTable.marketId);
+
+  const totalByWinningOutcomeRows =
+    winningOutcomeIds.length > 0
+      ? await db
+          .select({
+            outcomeId: betsTable.outcomeId,
+            totalBets: sql<number>`coalesce(sum(${betsTable.amount}), 0)`,
+          })
+          .from(betsTable)
+          .where(inArray(betsTable.outcomeId, winningOutcomeIds))
+          .groupBy(betsTable.outcomeId)
+      : [];
+
+  const users = await db
+    .select({
+      id: usersTable.id,
+      username: usersTable.username,
+    })
+    .from(usersTable);
+
+  const marketTotalById = new Map<number, number>();
+  for (const row of totalByMarketRows) {
+    marketTotalById.set(row.marketId, Number(row.totalBets ?? 0));
+  }
+
+  const winningOutcomeTotalById = new Map<number, number>();
+  for (const row of totalByWinningOutcomeRows) {
+    winningOutcomeTotalById.set(row.outcomeId, Number(row.totalBets ?? 0));
+  }
+
+  const usernameById = new Map<number, string>();
+  for (const user of users) {
+    usernameById.set(user.id, user.username);
+  }
+
+  const winningsByUserId = new Map<number, number>();
+  for (const bet of resolvedBets) {
+    if (bet.resolvedOutcomeId === null || bet.outcomeId !== bet.resolvedOutcomeId) continue;
+
+    const totalMarketBets = marketTotalById.get(bet.marketId) ?? 0;
+    const winningOutcomeBets = winningOutcomeTotalById.get(bet.resolvedOutcomeId) ?? 0;
+    if (winningOutcomeBets <= 0) continue;
+
+    const payout = (bet.amount * totalMarketBets) / winningOutcomeBets;
+    const current = winningsByUserId.get(bet.userId) ?? 0;
+    winningsByUserId.set(bet.userId, current + payout);
+  }
+
+  return Array.from(winningsByUserId.entries())
+    .map(([userId, totalWinnings]) => ({
+      userId,
+      username: usernameById.get(userId) ?? `User ${userId}`,
+      totalWinnings: Number(totalWinnings.toFixed(2)),
+    }))
+    .sort((a, b) => {
+      if (b.totalWinnings !== a.totalWinnings) return b.totalWinnings - a.totalWinnings;
+      return a.username.localeCompare(b.username);
+    })
+    .map((entry, index) => ({
+      rank: index + 1,
+      ...entry,
+    }));
+}
+
 export async function handleGetProfileBets(context: any) {
   const { user, query } = context as { user: typeof usersTable.$inferSelect; query: ProfileBetsQuery };
   const activePageSize = Math.min(Math.max(query.activePageSize ?? 20, 1), 100);
