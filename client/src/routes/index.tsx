@@ -282,7 +282,7 @@ function DashboardPage() {
                           </option>
                         ))}
                       </select>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 gap-2">
                         <Button
                           size="sm"
                           variant="outline"
@@ -291,15 +291,20 @@ function DashboardPage() {
                         >
                           Resolve
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={resolvingMarketId === market.id}
-                          onClick={() => handleAdminArchive(market.id)}
-                        >
-                          Archive
-                        </Button>
                       </div>
+                    </div>
+                  )}
+                  {user?.role === "admin" && market.status === "resolved" && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-800">Admin Controls</p>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={resolvingMarketId === market.id}
+                        onClick={() => handleAdminArchive(market.id)}
+                      >
+                        Archive
+                      </Button>
                     </div>
                   )}
                 </div>

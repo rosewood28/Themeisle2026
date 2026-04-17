@@ -40,7 +40,7 @@ export const marketsTable = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     title: text("title").notNull(),
     description: text("description"),
-    status: text("status", { enum: ["active", "resolved"] })
+    status: text("status", { enum: ["active", "resolved", "archived"] })
       .notNull()
       .default("active"),
     createdBy: integer("created_by")

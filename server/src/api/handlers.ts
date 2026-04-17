@@ -153,6 +153,7 @@ type EnrichedMarket = {
   id: number;
   title: string;
   status: "active" | "resolved" | "archived";
+  resolvedOutcomeId: number | null;
   creator?: string;
   outcomes: { id: number; title: string; odds: number; totalBets: number }[];
   totalMarketBets: number;
@@ -174,7 +175,10 @@ export async function handleListMarkets(context: any) {
     statusFilter === "active"
       ? eq(marketsTable.status, "active")
       : statusFilter === "archived"
-        ? and(eq(marketsTable.status, "resolved"), isNull(marketsTable.resolvedOutcomeId))
+        ? or(
+            eq(marketsTable.status, "archived"),
+            and(eq(marketsTable.status, "resolved"), isNull(marketsTable.resolvedOutcomeId)),
+          )
         : and(eq(marketsTable.status, "resolved"), isNotNull(marketsTable.resolvedOutcomeId));
 
   const markets = await db.query.marketsTable.findMany({
@@ -248,6 +252,7 @@ export async function handleListMarkets(context: any) {
       id: market.id,
       title: market.title,
       status: market.status === "resolved" && market.resolvedOutcomeId === null ? "archived" : market.status,
+      resolvedOutcomeId: market.resolvedOutcomeId ?? null,
       creator: market.creator?.username,
       outcomes: market.outcomes.map((outcome) => {
         const outcomeBets = totalsByOutcome.get(outcome.id) ?? 0;
@@ -297,7 +302,7 @@ export async function handleListMarkets(context: any) {
   const responseItems = sortedMarkets.map((market) => ({
     id: market.id,
     title: market.title,
-    status: market.status,
+    status: market.status === "resolved" && market.resolvedOutcomeId === null ? "archived" : market.status,
     creator: market.creator,
     outcomes: market.outcomes,
     totalMarketBets: market.totalMarketBets,
@@ -361,7 +366,7 @@ export async function handleGetMarket(context: any) {
     id: market.id,
     title: market.title,
     description: market.description,
-    status: market.status === "resolved" && market.resolvedOutcomeId === null ? "archived" : market.status,
+    status: market.status,
     creator: market.creator?.username,
     outcomes: market.outcomes.map((outcome) => {
       const outcomeBets = betsPerOutcome.find((b) => b.outcomeId === outcome.id)?.totalBets || 0;
@@ -574,10 +579,25 @@ export async function handleArchiveMarket(context: any) {
     return { error: "Market not found" };
   }
 
-  if (market.status !== "active") {
+  if (market.status !== "resolved") {
     set.status = 400;
-    return { error: "Market is already resolved" };
+    return { error: "Only resolved markets can be archived" };
   }
+
+  const marketBets = await db
+    .select({
+      userId: betsTable.userId,
+      outcomeId: betsTable.outcomeId,
+      amount: betsTable.amount,
+    })
+    .from(betsTable)
+    .where(eq(betsTable.marketId, marketId));
+
+  const totalMarketPool = marketBets.reduce((sum, bet) => sum + Number(bet.amount), 0);
+  const winningPool = marketBets
+    .filter((bet) => bet.outcomeId === market.resolvedOutcomeId)
+    .reduce((sum, bet) => sum + Number(bet.amount), 0);
+  const remainingFunds = winningPool > 0 ? 0 : totalMarketPool;
 
   const refundsRaw = await db
     .select({
@@ -589,6 +609,7 @@ export async function handleArchiveMarket(context: any) {
     .groupBy(betsTable.userId);
 
   for (const refund of refundsRaw) {
+    if (remainingFunds <= 0) break;
     const amountToRefund = Number(refund.totalRefund ?? 0);
     if (amountToRefund <= 0) continue;
 
@@ -601,12 +622,11 @@ export async function handleArchiveMarket(context: any) {
   await db
     .update(marketsTable)
     .set({
-      status: "resolved",
-      resolvedOutcomeId: null,
+      status: "archived",
     })
     .where(eq(marketsTable.id, marketId));
 
-  const refunds = refundsRaw.map((row) => ({
+  const refunds = (remainingFunds > 0 ? refundsRaw : []).map((row) => ({
     userId: row.userId,
     amount: Number(row.totalRefund ?? 0),
   }));
@@ -614,9 +634,9 @@ export async function handleArchiveMarket(context: any) {
 
   return {
     marketId,
-    status: "resolved",
+    status: "archived",
     resolutionType: "archived",
-    totalRefunded: Number(totalRefunded.toFixed(2)),
+    totalRefunded: Number((remainingFunds > 0 ? totalRefunded : 0).toFixed(2)),
     refunds,
   };
 }
@@ -648,7 +668,7 @@ export async function handleGetLeaderboard(context: any) {
     })
     .from(betsTable)
     .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
-    .where(eq(marketsTable.status, "resolved"));
+    .where(inArray(marketsTable.status, ["resolved", "archived"]));
 
   if (resolvedBets.length === 0) {
     return {
@@ -775,7 +795,9 @@ export async function handleGetProfileBets(context: any) {
     .select({ count: sql<number>`count(*)` })
     .from(betsTable)
     .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
-    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "resolved")));
+    .where(
+      and(eq(betsTable.userId, user.id), inArray(marketsTable.status, ["resolved", "archived"])),
+    );
 
   const activeTotal = Number(activeCountRow?.count ?? 0);
   const resolvedTotal = Number(resolvedCountRow?.count ?? 0);
@@ -816,7 +838,9 @@ export async function handleGetProfileBets(context: any) {
     .from(betsTable)
     .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
     .innerJoin(marketOutcomesTable, eq(marketOutcomesTable.id, betsTable.outcomeId))
-    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "resolved")))
+    .where(
+      and(eq(betsTable.userId, user.id), inArray(marketsTable.status, ["resolved", "archived"])),
+    )
     .orderBy(desc(betsTable.createdAt))
     .limit(resolvedPageSize)
     .offset((safeResolvedPage - 1) * resolvedPageSize);

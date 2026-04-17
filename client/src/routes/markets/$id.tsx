@@ -281,14 +281,6 @@ function MarketDetailPage() {
                   <CardDescription>Select the winning outcome to resolve this market.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button
-                    variant="destructive"
-                    className="w-full justify-start"
-                    disabled={isResolving}
-                    onClick={handleArchiveMarket}
-                  >
-                    {isResolving ? "Archiving..." : "Archive market and refund all bettors"}
-                  </Button>
                   {market.outcomes.map((outcome) => (
                     <Button
                       key={`resolve-${outcome.id}`}
@@ -300,6 +292,27 @@ function MarketDetailPage() {
                       {isResolving ? "Resolving..." : `Resolve as: ${outcome.title}`}
                     </Button>
                   ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {market.status === "resolved" && user?.role === "admin" && (
+              <Card className="bg-amber-50 border-amber-200">
+                <CardHeader>
+                  <CardTitle>Admin Archive</CardTitle>
+                  <CardDescription>
+                    Archive this resolved market. Refunds are issued only if payout left undistributed funds.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    variant="destructive"
+                    className="w-full justify-start"
+                    disabled={isResolving}
+                    onClick={handleArchiveMarket}
+                  >
+                    {isResolving ? "Archiving..." : "Archive market"}
+                  </Button>
                 </CardContent>
               </Card>
             )}
