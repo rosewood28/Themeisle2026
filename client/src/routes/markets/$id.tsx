@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
+import type { Market } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { api, Market } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,8 @@ function MarketDetailPage() {
   const [isBetting, setIsBetting] = useState(false);
 
   const marketId = parseInt(id, 10);
+  const parsedBetAmount = Number.parseFloat(betAmount);
+  const isValidBetAmount = Number.isFinite(parsedBetAmount) && parsedBetAmount > 0;
 
   useEffect(() => {
     const loadMarket = async () => {
@@ -46,10 +49,15 @@ function MarketDetailPage() {
       return;
     }
 
+    if (!isValidBetAmount) {
+      setError("Bet amount must be a positive number");
+      return;
+    }
+
     try {
       setIsBetting(true);
       setError(null);
-      await api.placeBet(marketId, selectedOutcomeId, parseFloat(betAmount));
+      await api.placeBet(marketId, selectedOutcomeId, parsedBetAmount);
       setBetAmount("");
       // Reload market to show updated odds
       const updated = await api.getMarket(marketId);
@@ -153,6 +161,34 @@ function MarketDetailPage() {
               ))}
             </div>
 
+            {/* Bet Distribution Chart */}
+            <Card className="bg-secondary/5">
+              <CardHeader>
+                <CardTitle>Bet Distribution</CardTitle>
+                <CardDescription>Share of total pool by outcome</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {market.outcomes.map((outcome) => {
+                  const percentage =
+                    market.totalMarketBets > 0
+                      ? Number(((outcome.totalBets / market.totalMarketBets) * 100).toFixed(2))
+                      : 0;
+
+                  return (
+                    <div key={`chart-${outcome.id}`} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">{outcome.title}</span>
+                        <span className="text-muted-foreground">{percentage}%</span>
+                      </div>
+                      <div className="h-3 w-full rounded-full bg-secondary/40 overflow-hidden">
+                        <div className="h-full bg-primary transition-all" style={{ width: `${percentage}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
             {/* Market Stats */}
             <div className="rounded-lg p-6 border border-primary/20 bg-primary/5">
               <p className="text-sm text-muted-foreground mb-1">Total Market Value</p>
@@ -182,7 +218,7 @@ function MarketDetailPage() {
                       id="betAmount"
                       type="number"
                       step="0.01"
-                      min="0"
+                      min="0.01"
                       value={betAmount}
                       onChange={(e) => setBetAmount(e.target.value)}
                       placeholder="Enter amount"
@@ -193,7 +229,7 @@ function MarketDetailPage() {
                   <Button
                     className="w-full text-lg py-6"
                     onClick={handlePlaceBet}
-                    disabled={isBetting || !selectedOutcomeId || !betAmount}
+                    disabled={isBetting || !selectedOutcomeId || !betAmount || !isValidBetAmount}
                   >
                     {isBetting ? "Placing bet..." : "Place Bet"}
                   </Button>
