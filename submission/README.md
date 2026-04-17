@@ -16,6 +16,12 @@ The original stack provided in the assignment was kept for implementation.
 
 ---
 
+## Images or Video Demo
+
+Demo video: ./submission/demo.mp4
+
+---
+
 ## How To Run
 
 ### Docker
@@ -120,4 +126,4 @@ bun run admin:show
 - Server-Sent Events (SSE) for dashboard market updates:
   - simpler than WebSockets for one-way server-to-client streams
   - improves user experience compared to periodic full refresh polling
-- Kept polling fallback for when stream disconnects 
+- Kept polling fallback for when stream disconnects
