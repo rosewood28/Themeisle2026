@@ -8,6 +8,7 @@ import {
   handleGetProfileBets,
   handleGetLeaderboard,
   handleResolveMarket,
+  handleArchiveMarket,
 } from "./handlers";
 
 export const marketRoutes = new Elysia({ prefix: "/api/markets" })
@@ -84,6 +85,11 @@ export const marketRoutes = new Elysia({ prefix: "/api/markets" })
           }),
           body: t.Object({
             outcomeId: t.Number(),
+          }),
+        })
+        .post("/:id/archive", handleArchiveMarket, {
+          params: t.Object({
+            id: t.Numeric(),
           }),
         }),
   );

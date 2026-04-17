@@ -84,6 +84,20 @@ function MarketDetailPage() {
     }
   };
 
+  const handleArchiveMarket = async () => {
+    try {
+      setIsResolving(true);
+      setError(null);
+      await api.archiveMarket(marketId);
+      const updated = await api.getMarket(marketId);
+      setMarket(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to archive market");
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -259,6 +273,14 @@ function MarketDetailPage() {
                   <CardDescription>Select the winning outcome to resolve this market.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <Button
+                    variant="destructive"
+                    className="w-full justify-start"
+                    disabled={isResolving}
+                    onClick={handleArchiveMarket}
+                  >
+                    {isResolving ? "Archiving..." : "Archive market and refund all bettors"}
+                  </Button>
                   {market.outcomes.map((outcome) => (
                     <Button
                       key={`resolve-${outcome.id}`}

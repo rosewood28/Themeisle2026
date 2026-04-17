@@ -170,7 +170,7 @@ function ProfilePage() {
                         </p>
                       </div>
                       <Badge variant={bet.result === "won" ? "default" : "secondary"}>
-                        {bet.result === "won" ? "Won" : "Lost"}
+                        {bet.result === "won" ? "Won" : bet.result === "lost" ? "Lost" : "Refunded"}
                       </Badge>
                     </div>
                   ))

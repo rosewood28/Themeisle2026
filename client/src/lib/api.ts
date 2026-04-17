@@ -71,7 +71,7 @@ export interface UserResolvedBet {
   outcomeId: number;
   outcomeTitle: string;
   amount: number;
-  result: "won" | "lost";
+  result: "won" | "lost" | "refunded";
   placedAt: string;
 }
 
@@ -204,6 +204,18 @@ class ApiClient {
     return this.request(`/api/markets/${marketId}/resolve`, {
       method: "POST",
       body: JSON.stringify({ outcomeId }),
+    });
+  }
+
+  async archiveMarket(marketId: number): Promise<{
+    marketId: number;
+    status: "resolved";
+    resolutionType: "archived";
+    totalRefunded: number;
+    refunds: Array<{ userId: number; amount: number }>;
+  }> {
+    return this.request(`/api/markets/${marketId}/archive`, {
+      method: "POST",
     });
   }
 

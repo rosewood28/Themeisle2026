@@ -468,6 +468,62 @@ export async function handleResolveMarket(context: any) {
   };
 }
 
+export async function handleArchiveMarket(context: any) {
+  const { params, set, user } = context;
+
+  if (!user || user.role !== "admin") {
+    set.status = 403;
+    return { error: "Admin access required" };
+  }
+
+  const marketId = params.id;
+
+  const market = await db.query.marketsTable.findFirst({
+    where: eq(marketsTable.id, marketId),
+  });
+
+  if (!market) {
+    set.status = 404;
+    return { error: "Market not found" };
+  }
+
+  if (market.status !== "active") {
+    set.status = 400;
+    return { error: "Market is already resolved" };
+  }
+
+  const refundsRaw = await db
+    .select({
+      userId: betsTable.userId,
+      totalRefund: sql<number>`coalesce(sum(${betsTable.amount}), 0)`,
+    })
+    .from(betsTable)
+    .where(eq(betsTable.marketId, marketId))
+    .groupBy(betsTable.userId);
+
+  await db
+    .update(marketsTable)
+    .set({
+      status: "resolved",
+      resolvedOutcomeId: null,
+    })
+    .where(eq(marketsTable.id, marketId));
+
+  const refunds = refundsRaw.map((row) => ({
+    userId: row.userId,
+    amount: Number(row.totalRefund ?? 0),
+  }));
+  const totalRefunded = refunds.reduce((sum, item) => sum + item.amount, 0);
+
+  return {
+    marketId,
+    status: "resolved",
+    resolutionType: "archived",
+    totalRefunded: Number(totalRefunded.toFixed(2)),
+    refunds,
+  };
+}
+
 type ProfileBetsQuery = {
   activePage?: number;
   activePageSize?: number;
@@ -736,7 +792,12 @@ export async function handleGetProfileBets(context: any) {
         outcomeId: bet.outcomeId,
         outcomeTitle: bet.outcomeTitle,
         amount: bet.amount,
-        result: bet.resolvedOutcomeId === bet.outcomeId ? "won" : "lost",
+        result:
+          bet.resolvedOutcomeId === null
+            ? "refunded"
+            : bet.resolvedOutcomeId === bet.outcomeId
+              ? "won"
+              : "lost",
         placedAt: bet.placedAt,
       })),
       page: safeResolvedPage,
