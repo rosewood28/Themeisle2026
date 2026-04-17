@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import type { LeaderboardEntry } from "@/lib/api";
+import type { LeaderboardEntry, LeaderboardResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -10,25 +10,56 @@ function LeaderboardPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [entries, setEntries] = useState<Array<LeaderboardEntry>>([]);
+  const [pagination, setPagination] = useState<Omit<LeaderboardResponse, "items">>({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false,
+  });
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = async (showLoading = true) => {
     try {
-      setIsLoading(true);
+      if (showLoading) {
+        setIsLoading(true);
+      }
       setError(null);
-      const data = await api.getLeaderboard();
-      setEntries(data);
+      const data = await api.getLeaderboard({ page, pageSize: 20 });
+      setEntries(data.items);
+      setPagination({
+        page: data.page,
+        pageSize: data.pageSize,
+        total: data.total,
+        totalPages: data.totalPages,
+        hasNext: data.hasNext,
+        hasPrev: data.hasPrev,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load leaderboard");
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadLeaderboard();
-  }, []);
+  }, [page]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadLeaderboard(false);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [page]);
 
   if (!isAuthenticated) {
     return (
@@ -52,7 +83,7 @@ function LeaderboardPage() {
             <Button variant="outline" onClick={() => navigate({ to: "/" })}>
               Back to Markets
             </Button>
-            <Button variant="outline" onClick={loadLeaderboard} disabled={isLoading}>
+            <Button variant="outline" onClick={() => loadLeaderboard()} disabled={isLoading}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
           </div>
@@ -74,22 +105,45 @@ function LeaderboardPage() {
             ) : entries.length === 0 ? (
               <p className="text-muted-foreground">No resolved winnings yet.</p>
             ) : (
-              <div className="space-y-3">
-                {entries.map((entry) => (
-                  <div
-                    key={entry.userId}
-                    className="flex items-center justify-between rounded-md border bg-background p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-8 text-center font-bold text-primary">#{entry.rank}</span>
-                      <span className="font-semibold">{entry.username}</span>
+              <>
+                <div className="space-y-3">
+                  {entries.map((entry) => (
+                    <div
+                      key={entry.userId}
+                      className="flex items-center justify-between rounded-md border bg-background p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-8 text-center font-bold text-primary">#{entry.rank}</span>
+                        <span className="font-semibold">{entry.username}</span>
+                      </div>
+                      <span className="text-lg font-bold text-primary">
+                        ${entry.totalWinnings.toFixed(2)}
+                      </span>
                     </div>
-                    <span className="text-lg font-bold text-primary">
-                      ${entry.totalWinnings.toFixed(2)}
-                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Page {pagination.page} of {pagination.totalPages || 1} ({pagination.total} users)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={!pagination.hasPrev || isLoading}
+                      onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!pagination.hasNext || isLoading}
+                      onClick={() => setPage((prev) => prev + 1)}
+                    >
+                      Next
+                    </Button>
                   </div>
-                ))}
-              </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

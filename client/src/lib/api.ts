@@ -40,6 +40,7 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  role: "admin" | "user";
   token: string;
 }
 
@@ -94,6 +95,16 @@ export interface LeaderboardEntry {
   userId: number;
   username: string;
   totalWinnings: number;
+}
+
+export interface LeaderboardResponse {
+  items: Array<LeaderboardEntry>;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
 }
 
 // API Client
@@ -185,6 +196,17 @@ class ApiClient {
     });
   }
 
+  async resolveMarket(marketId: number, outcomeId: number): Promise<{
+    marketId: number;
+    status: "resolved";
+    resolvedOutcomeId: number;
+  }> {
+    return this.request(`/api/markets/${marketId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ outcomeId }),
+    });
+  }
+
   async getProfileBets(query: {
     activePage?: number;
     activePageSize?: number;
@@ -203,8 +225,12 @@ class ApiClient {
     return this.request(`/api/markets/profile/bets?${params.toString()}`);
   }
 
-  async getLeaderboard(): Promise<Array<LeaderboardEntry>> {
-    return this.request("/api/markets/leaderboard");
+  async getLeaderboard(query: { page?: number; pageSize?: number } = {}): Promise<LeaderboardResponse> {
+    const params = new URLSearchParams();
+    params.set("page", String(query.page ?? 1));
+    params.set("pageSize", String(query.pageSize ?? 20));
+
+    return this.request(`/api/markets/leaderboard?${params.toString()}`);
   }
 }
 

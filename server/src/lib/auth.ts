@@ -2,8 +2,11 @@ import { usersTable } from "../db/schema";
 import db from "../db";
 import { eq } from "drizzle-orm";
 
+export type UserRole = "admin" | "user";
+
 export interface AuthTokenPayload {
   userId: number;
+  role: UserRole;
 }
 
 /**
@@ -26,4 +29,25 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 export async function getUserById(userId: number): Promise<typeof usersTable.$inferSelect | null> {
   const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
   return user ?? null;
+}
+
+export function getUserRole(user: Pick<typeof usersTable.$inferSelect, "email" | "username">): UserRole {
+  const adminEmails = new Set(
+    (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const adminUsernames = new Set(
+    (process.env.ADMIN_USERNAMES || "admin")
+      .split(",")
+      .map((username) => username.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  if (adminEmails.has(user.email.toLowerCase()) || adminUsernames.has(user.username.toLowerCase())) {
+    return "admin";
+  }
+
+  return "user";
 }

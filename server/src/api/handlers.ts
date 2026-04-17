@@ -1,7 +1,7 @@
 import { eq, and, inArray, sql, desc, or } from "drizzle-orm";
 import db from "../db";
 import { usersTable, marketsTable, marketOutcomesTable, betsTable } from "../db/schema";
-import { hashPassword, verifyPassword } from "../lib/auth";
+import { getUserRole, hashPassword, verifyPassword } from "../lib/auth";
 import {
   validateRegistration,
   validateLogin,
@@ -38,13 +38,15 @@ export async function handleRegister(context: any) {
     return { error: "Failed to create user" };
   }
 
-  const token = await jwt.sign({ userId: createdUser.id });
+  const role = getUserRole(createdUser);
+  const token = await jwt.sign({ userId: createdUser.id, role });
 
   set.status = 201;
   return {
     id: createdUser.id,
     username: createdUser.username,
     email: createdUser.email,
+    role,
     token,
   };
 }
@@ -68,12 +70,14 @@ export async function handleLogin(context: any) {
     return { error: "Invalid email or password" };
   }
 
-  const token = await jwt.sign({ userId: user.id });
+  const role = getUserRole(user);
+  const token = await jwt.sign({ userId: user.id, role });
 
   return {
     id: user.id,
     username: user.username,
     email: user.email,
+    role,
     token,
   };
 }
@@ -415,6 +419,55 @@ export async function handlePlaceBet(context: any) {
   };
 }
 
+export async function handleResolveMarket(context: any) {
+  const { params, body, set, user } = context;
+
+  if (!user || user.role !== "admin") {
+    set.status = 403;
+    return { error: "Admin access required" };
+  }
+
+  const marketId = params.id;
+  const { outcomeId } = body;
+
+  const market = await db.query.marketsTable.findFirst({
+    where: eq(marketsTable.id, marketId),
+  });
+
+  if (!market) {
+    set.status = 404;
+    return { error: "Market not found" };
+  }
+
+  if (market.status !== "active") {
+    set.status = 400;
+    return { error: "Market is already resolved" };
+  }
+
+  const outcome = await db.query.marketOutcomesTable.findFirst({
+    where: and(eq(marketOutcomesTable.id, outcomeId), eq(marketOutcomesTable.marketId, marketId)),
+  });
+
+  if (!outcome) {
+    set.status = 404;
+    return { error: "Outcome not found for this market" };
+  }
+
+  await db
+    .update(marketsTable)
+    .set({
+      status: "resolved",
+      resolvedOutcomeId: outcomeId,
+    })
+    .where(eq(marketsTable.id, marketId));
+
+  return {
+    marketId,
+    status: "resolved",
+    resolvedOutcomeId: outcomeId,
+  };
+}
+
 type ProfileBetsQuery = {
   activePage?: number;
   activePageSize?: number;
@@ -422,7 +475,16 @@ type ProfileBetsQuery = {
   resolvedPageSize?: number;
 };
 
-export async function handleGetLeaderboard() {
+type LeaderboardQuery = {
+  page?: number;
+  pageSize?: number;
+};
+
+export async function handleGetLeaderboard(context: any) {
+  const { query } = context as { query: LeaderboardQuery };
+  const page = Math.max(query.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 100);
+
   const resolvedBets = await db
     .select({
       userId: betsTable.userId,
@@ -436,7 +498,15 @@ export async function handleGetLeaderboard() {
     .where(eq(marketsTable.status, "resolved"));
 
   if (resolvedBets.length === 0) {
-    return [];
+    return {
+      items: [],
+      page,
+      pageSize,
+      total: 0,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: false,
+    };
   }
 
   const marketIds = Array.from(new Set(resolvedBets.map((bet) => bet.marketId)));
@@ -504,7 +574,7 @@ export async function handleGetLeaderboard() {
     winningsByUserId.set(bet.userId, current + payout);
   }
 
-  return Array.from(winningsByUserId.entries())
+  const rankedEntries = Array.from(winningsByUserId.entries())
     .map(([userId, totalWinnings]) => ({
       userId,
       username: usernameById.get(userId) ?? `User ${userId}`,
@@ -518,6 +588,21 @@ export async function handleGetLeaderboard() {
       rank: index + 1,
       ...entry,
     }));
+
+  const total = rankedEntries.length;
+  const totalPages = Math.ceil(total / pageSize);
+  const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+  const offset = (safePage - 1) * pageSize;
+
+  return {
+    items: rankedEntries.slice(offset, offset + pageSize),
+    page: safePage,
+    pageSize,
+    total,
+    totalPages,
+    hasNext: safePage < totalPages,
+    hasPrev: safePage > 1,
+  };
 }
 
 export async function handleGetProfileBets(context: any) {

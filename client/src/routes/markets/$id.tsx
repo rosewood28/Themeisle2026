@@ -12,13 +12,14 @@ import { Label } from "@/components/ui/label";
 function MarketDetailPage() {
   const { id } = useParams({ from: "/markets/$id" });
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [market, setMarket] = useState<Market | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOutcomeId, setSelectedOutcomeId] = useState<number | null>(null);
   const [betAmount, setBetAmount] = useState("");
   const [isBetting, setIsBetting] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
   const marketId = parseInt(id, 10);
   const parsedBetAmount = Number.parseFloat(betAmount);
@@ -66,6 +67,20 @@ function MarketDetailPage() {
       setError(err instanceof Error ? err.message : "Failed to place bet");
     } finally {
       setIsBetting(false);
+    }
+  };
+
+  const handleResolveMarket = async (outcomeId: number) => {
+    try {
+      setIsResolving(true);
+      setError(null);
+      await api.resolveMarket(marketId, outcomeId);
+      const updated = await api.getMarket(marketId);
+      setMarket(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resolve market");
+    } finally {
+      setIsResolving(false);
     }
   };
 
@@ -233,6 +248,28 @@ function MarketDetailPage() {
                   >
                     {isBetting ? "Placing bet..." : "Place Bet"}
                   </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {market.status === "active" && user?.role === "admin" && (
+              <Card className="bg-amber-50 border-amber-200">
+                <CardHeader>
+                  <CardTitle>Admin Market Resolution</CardTitle>
+                  <CardDescription>Select the winning outcome to resolve this market.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {market.outcomes.map((outcome) => (
+                    <Button
+                      key={`resolve-${outcome.id}`}
+                      variant="outline"
+                      className="w-full justify-start"
+                      disabled={isResolving}
+                      onClick={() => handleResolveMarket(outcome.id)}
+                    >
+                      {isResolving ? "Resolving..." : `Resolve as: ${outcome.title}`}
+                    </Button>
+                  ))}
                 </CardContent>
               </Card>
             )}

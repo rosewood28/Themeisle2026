@@ -111,6 +111,9 @@ function DashboardPage() {
           <div>
             <h1 className="text-4xl font-bold text-gray-900">Markets</h1>
             <p className="text-gray-600 mt-2">Welcome back, {user?.username}!</p>
+            {user?.role === "admin" && (
+              <p className="text-amber-700 text-sm mt-1">Admin mode: you can resolve active markets.</p>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <Button variant="outline" onClick={() => navigate({ to: "/leaderboard" })}>

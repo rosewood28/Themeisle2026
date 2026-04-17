@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { User } from "./api";
+import type { User } from "./api";
 
 interface AuthContextType {
   user: User | null;
@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: newUser.id,
         username: newUser.username,
         email: newUser.email,
+        role: newUser.role,
       }),
     );
   };

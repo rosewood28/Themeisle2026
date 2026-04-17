@@ -13,5 +13,6 @@ export const jwtPlugin = jwt({
   exp: "7d",
   schema: t.Object({
     userId: t.Number(),
+    role: t.Union([t.Literal("admin"), t.Literal("user")]),
   }),
 });
