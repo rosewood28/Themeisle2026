@@ -8,7 +8,7 @@ This submission implements a full-stack prediction market platform with:
 - betting, payout distribution, balance tracking, leaderboard and profile bet history;
 - paginated dashboards and dashboard updates via SSE (with polling fallback).
 
-Stack:
+The original stack provided in the assignment was kept for implementation.
 
 - **Backend**: Bun + Elysia + Drizzle ORM + SQLite
 - **Frontend**: React + TanStack Router + Tailwind + shadcn/ui
