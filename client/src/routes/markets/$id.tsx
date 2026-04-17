@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function MarketDetailPage() {
   const { id } = useParams({ from: "/markets/$id" });
@@ -20,6 +30,12 @@ function MarketDetailPage() {
   const [betAmount, setBetAmount] = useState("");
   const [isBetting, setIsBetting] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<
+    | { type: "resolve"; outcomeId: number }
+    | { type: "archive" }
+    | null
+  >(null);
 
   const marketId = parseInt(id, 10);
   const parsedBetAmount = Number.parseFloat(betAmount);
@@ -100,6 +116,28 @@ function MarketDetailPage() {
     } finally {
       setIsResolving(false);
     }
+  };
+
+  const confirmResolve = (outcomeId: number) => {
+    setPendingAction({ type: "resolve", outcomeId });
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmArchive = () => {
+    setPendingAction({ type: "archive" });
+    setConfirmDialogOpen(true);
+  };
+
+  const runConfirmedAction = async () => {
+    if (!pendingAction) return;
+    setConfirmDialogOpen(false);
+
+    if (pendingAction.type === "resolve") {
+      await handleResolveMarket(pendingAction.outcomeId);
+      return;
+    }
+
+    await handleArchiveMarket();
   };
 
   if (!isAuthenticated) {
@@ -287,7 +325,7 @@ function MarketDetailPage() {
                       variant="outline"
                       className="w-full justify-start"
                       disabled={isResolving}
-                      onClick={() => handleResolveMarket(outcome.id)}
+                      onClick={() => confirmResolve(outcome.id)}
                     >
                       {isResolving ? "Resolving..." : `Resolve as: ${outcome.title}`}
                     </Button>
@@ -309,7 +347,7 @@ function MarketDetailPage() {
                     variant="outline"
                     className="w-full justify-start"
                     disabled={isResolving}
-                    onClick={handleArchiveMarket}
+                    onClick={confirmArchive}
                   >
                     {isResolving ? "Archiving..." : "Archive market"}
                   </Button>
@@ -328,6 +366,24 @@ function MarketDetailPage() {
                 </CardContent>
               </Card>
             )}
+            <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {pendingAction?.type === "resolve" ? "Resolve market?" : "Archive market?"}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {pendingAction?.type === "resolve"
+                      ? "This will finalize the winning outcome and distribute payouts to winners."
+                      : "This will archive the resolved market and refund any remaining undistributed funds."}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={runConfirmedAction}>Confirm</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </div>

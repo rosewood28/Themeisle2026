@@ -6,6 +6,16 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MarketCard } from "@/components/market-card";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function DashboardPage() {
   const { isAuthenticated, user } = useAuth();
@@ -29,6 +39,13 @@ function DashboardPage() {
     {},
   );
   const [resolvingMarketId, setResolvingMarketId] = useState<number | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState<{
+    type: "resolve" | "archive";
+    marketId: number;
+    outcomeId?: number;
+    marketTitle: string;
+  } | null>(null);
 
   const applyMarketsPayload = (data: Array<Market> | MarketsListResponse) => {
     if (Array.isArray(data)) {
@@ -122,6 +139,42 @@ function DashboardPage() {
     } finally {
       setResolvingMarketId(null);
     }
+  };
+
+  const openResolveConfirm = (market: Market) => {
+    const outcomeId = selectedResolutionOutcome[market.id];
+    if (!outcomeId) {
+      setError("Please select an outcome first.");
+      return;
+    }
+    setPendingAdminAction({
+      type: "resolve",
+      marketId: market.id,
+      outcomeId,
+      marketTitle: market.title,
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const openArchiveConfirm = (market: Market) => {
+    setPendingAdminAction({
+      type: "archive",
+      marketId: market.id,
+      marketTitle: market.title,
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmAdminAction = async () => {
+    if (!pendingAdminAction) return;
+    setConfirmDialogOpen(false);
+
+    if (pendingAdminAction.type === "resolve" && pendingAdminAction.outcomeId) {
+      await handleAdminResolve(pendingAdminAction.marketId);
+      return;
+    }
+
+    await handleAdminArchive(pendingAdminAction.marketId);
   };
 
   useEffect(() => {
@@ -318,7 +371,7 @@ function DashboardPage() {
                           size="sm"
                           variant="outline"
                           disabled={resolvingMarketId === market.id}
-                          onClick={() => handleAdminResolve(market.id)}
+                          onClick={() => openResolveConfirm(market)}
                         >
                           Resolve
                         </Button>
@@ -332,7 +385,7 @@ function DashboardPage() {
                         size="sm"
                         variant="outline"
                         disabled={resolvingMarketId === market.id}
-                        onClick={() => handleAdminArchive(market.id)}
+                        onClick={() => openArchiveConfirm(market)}
                       >
                         Archive
                       </Button>
@@ -364,6 +417,24 @@ function DashboardPage() {
             </div>
           </>
         )}
+        <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {pendingAdminAction?.type === "resolve" ? "Resolve market?" : "Archive market?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingAdminAction?.type === "resolve"
+                  ? `This will resolve "${pendingAdminAction.marketTitle}" with the selected winning outcome and distribute payouts.`
+                  : `This will archive "${pendingAdminAction?.marketTitle}" and refund any remaining undistributed funds.`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmAdminAction}>Confirm</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

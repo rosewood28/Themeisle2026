@@ -1,6 +1,13 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4001";
 
 // Types
+interface ApiErrorResponse {
+  code?: string;
+  message?: string;
+  error?: string;
+  errors?: Array<{ field: string; message: string }>;
+}
+
 export interface Market {
   id: number;
   title: string;
@@ -138,15 +145,19 @@ class ApiClient {
       headers,
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as ApiErrorResponse | Record<string, unknown>;
 
     if (!response.ok) {
-      // If there are validation errors, throw them
-      if (data.errors && Array.isArray(data.errors)) {
-        const errorMessage = data.errors.map((e: any) => `${e.field}: ${e.message}`).join(", ");
+      const typed = data as ApiErrorResponse;
+
+      // Supports both old and new validation error envelopes.
+      if (typed.errors && Array.isArray(typed.errors)) {
+        const errorMessage = typed.errors.map((e) => `${e.field}: ${e.message}`).join(", ");
         throw new Error(errorMessage);
       }
-      throw new Error(data.error || `API Error: ${response.status}`);
+
+      const friendlyMessage = typed.message || typed.error || `API Error: ${response.status}`;
+      throw new Error(friendlyMessage);
     }
 
     return data ?? {};
