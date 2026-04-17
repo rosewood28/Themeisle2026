@@ -18,6 +18,8 @@ export const usersTable = sqliteTable(
     username: text("username").notNull().unique(),
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
+    role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
+    balance: real("balance").notNull().default(1000),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),

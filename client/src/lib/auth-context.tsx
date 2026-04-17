@@ -43,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: newUser.username,
         email: newUser.email,
         role: newUser.role,
+        balance: newUser.balance,
       }),
     );
   };

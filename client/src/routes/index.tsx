@@ -25,6 +25,10 @@ function DashboardPage() {
     hasNext: false,
     hasPrev: false,
   });
+  const [selectedResolutionOutcome, setSelectedResolutionOutcome] = useState<Partial<Record<number, number>>>(
+    {},
+  );
+  const [resolvingMarketId, setResolvingMarketId] = useState<number | null>(null);
 
   const loadMarkets = async (showLoading = true) => {
     try {
@@ -75,6 +79,48 @@ function DashboardPage() {
   }, [status, sortBy, sortDir, page]);
 
   useEffect(() => {
+    setSelectedResolutionOutcome((current) => {
+      const next = { ...current };
+      for (const market of markets) {
+        if (next[market.id] === undefined && market.outcomes.length > 0) {
+          next[market.id] = market.outcomes[0].id;
+        }
+      }
+      return next;
+    });
+  }, [markets]);
+
+  const handleAdminResolve = async (marketId: number) => {
+    const outcomeId = selectedResolutionOutcome[marketId];
+    if (!outcomeId) {
+      setError("Please select an outcome first.");
+      return;
+    }
+
+    try {
+      setResolvingMarketId(marketId);
+      await api.resolveMarket(marketId, outcomeId);
+      await loadMarkets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resolve market");
+    } finally {
+      setResolvingMarketId(null);
+    }
+  };
+
+  const handleAdminArchive = async (marketId: number) => {
+    try {
+      setResolvingMarketId(marketId);
+      await api.archiveMarket(marketId);
+      await loadMarkets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to archive market");
+    } finally {
+      setResolvingMarketId(null);
+    }
+  };
+
+  useEffect(() => {
     if (!isAuthenticated) return;
 
     const intervalId = window.setInterval(() => {
@@ -111,6 +157,7 @@ function DashboardPage() {
           <div>
             <h1 className="text-4xl font-bold text-gray-900">Markets</h1>
             <p className="text-gray-600 mt-2">Welcome back, {user?.username}!</p>
+            <p className="text-gray-700 text-sm mt-1">Balance: ${Number(user?.balance ?? 0).toFixed(2)}</p>
             {user?.role === "admin" && (
               <p className="text-amber-700 text-sm mt-1">Admin mode: you can resolve active markets.</p>
             )}
@@ -205,7 +252,48 @@ function DashboardPage() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {markets.map((market) => (
-                <MarketCard key={market.id} market={market} />
+                <div key={market.id} className="space-y-2">
+                  <MarketCard market={market} />
+                  {user?.role === "admin" && market.status === "active" && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-800">Admin Controls</p>
+                      <select
+                        value={selectedResolutionOutcome[market.id] ?? ""}
+                        onChange={(event) =>
+                          setSelectedResolutionOutcome((current) => ({
+                            ...current,
+                            [market.id]: Number(event.target.value),
+                          }))
+                        }
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                      >
+                        {market.outcomes.map((outcome) => (
+                          <option key={outcome.id} value={outcome.id}>
+                            {outcome.title}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resolvingMarketId === market.id}
+                          onClick={() => handleAdminResolve(market.id)}
+                        >
+                          Resolve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={resolvingMarketId === market.id}
+                          onClick={() => handleAdminArchive(market.id)}
+                        >
+                          Archive
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             <div className="mt-6 flex items-center justify-between rounded-md border bg-card p-4">

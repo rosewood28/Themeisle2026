@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { getUserById, getUserRole } from "../lib/auth";
+import { getUserById } from "../lib/auth";
 
 export const authMiddleware = new Elysia({ name: "auth-middleware" })
   .derive(async ({ headers, jwt }) => {
@@ -19,6 +19,6 @@ export const authMiddleware = new Elysia({ name: "auth-middleware" })
       return { user: null };
     }
 
-    return { user: { ...user, role: getUserRole(user) } };
+    return { user };
   })
   .as("plugin");

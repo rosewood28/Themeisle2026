@@ -84,6 +84,8 @@ function createRandomUser(runId: string, index: number): UserInsert {
     username,
     email: normalizedEmail,
     passwordHash: "",
+    role: "user",
+    balance: 1000,
   };
 }
 
@@ -184,6 +186,11 @@ async function insertUsers() {
       passwordHash,
     };
   });
+
+  if (userValues.length > 0) {
+    userValues[0].username = "admin";
+    userValues[0].role = "admin";
+  }
 
   const insertedUsers: UserRow[] = [];
 
@@ -327,6 +334,13 @@ async function insertBets(users: SeededUser[], markets: CreatedMarket[]) {
 
   for (const batch of chunkArray(betValues, BET_INSERT_BATCH_SIZE)) {
     await db.insert(schema.betsTable).values(batch);
+  }
+
+  for (const user of users) {
+    await db
+      .update(schema.usersTable)
+      .set({ balance: Number(user.remainingBalance.toFixed(2)) })
+      .where(eq(schema.usersTable.id, user.id));
   }
 
   console.log(`Created ${betValues.length} bets.`);

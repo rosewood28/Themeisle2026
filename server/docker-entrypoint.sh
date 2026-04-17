@@ -17,4 +17,6 @@ if [ "${SEED_DATABASE:-false}" = "true" ] && [ "$SHOULD_SEED" = "true" ]; then
   bun run db:seed
 fi
 
+bun run admin:bootstrap
+
 exec bun index.ts

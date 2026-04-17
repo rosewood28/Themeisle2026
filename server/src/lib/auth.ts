@@ -30,24 +30,3 @@ export async function getUserById(userId: number): Promise<typeof usersTable.$in
   const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
   return user ?? null;
 }
-
-export function getUserRole(user: Pick<typeof usersTable.$inferSelect, "email" | "username">): UserRole {
-  const adminEmails = new Set(
-    (process.env.ADMIN_EMAILS || "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  const adminUsernames = new Set(
-    (process.env.ADMIN_USERNAMES || "admin")
-      .split(",")
-      .map((username) => username.trim().toLowerCase())
-      .filter(Boolean),
-  );
-
-  if (adminEmails.has(user.email.toLowerCase()) || adminUsernames.has(user.username.toLowerCase())) {
-    return "admin";
-  }
-
-  return "user";
-}

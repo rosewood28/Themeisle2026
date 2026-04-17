@@ -1,7 +1,7 @@
 import { eq, and, inArray, sql, desc, or } from "drizzle-orm";
 import db from "../db";
 import { usersTable, marketsTable, marketOutcomesTable, betsTable } from "../db/schema";
-import { getUserRole, hashPassword, verifyPassword } from "../lib/auth";
+import { hashPassword, verifyPassword } from "../lib/auth";
 import {
   validateRegistration,
   validateLogin,
@@ -29,8 +29,21 @@ export async function handleRegister(context: any) {
   }
 
   const passwordHash = await hashPassword(password);
+  const adminEmails = new Set(
+    (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const adminUsernames = new Set(
+    (process.env.ADMIN_USERNAMES || "admin")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const role = adminEmails.has(email.toLowerCase()) || adminUsernames.has(username.toLowerCase()) ? "admin" : "user";
 
-  const newUser = await db.insert(usersTable).values({ username, email, passwordHash }).returning();
+  const newUser = await db.insert(usersTable).values({ username, email, passwordHash, role }).returning();
   const createdUser = newUser[0];
 
   if (!createdUser) {
@@ -38,15 +51,15 @@ export async function handleRegister(context: any) {
     return { error: "Failed to create user" };
   }
 
-  const role = getUserRole(createdUser);
-  const token = await jwt.sign({ userId: createdUser.id, role });
+  const token = await jwt.sign({ userId: createdUser.id, role: createdUser.role });
 
   set.status = 201;
   return {
     id: createdUser.id,
     username: createdUser.username,
     email: createdUser.email,
-    role,
+    role: createdUser.role,
+    balance: createdUser.balance,
     token,
   };
 }
@@ -70,14 +83,14 @@ export async function handleLogin(context: any) {
     return { error: "Invalid email or password" };
   }
 
-  const role = getUserRole(user);
-  const token = await jwt.sign({ userId: user.id, role });
+  const token = await jwt.sign({ userId: user.id, role: user.role });
 
   return {
     id: user.id,
     username: user.username,
     email: user.email,
-    role,
+    role: user.role,
+    balance: user.balance,
     token,
   };
 }
@@ -393,13 +406,19 @@ export async function handlePlaceBet(context: any) {
     return { error: "Outcome not found" };
   }
 
+  const numericAmount = Number(amount);
+  if (user.balance < numericAmount) {
+    set.status = 400;
+    return { error: "Insufficient balance" };
+  }
+
   const bet = await db
     .insert(betsTable)
     .values({
       userId: user.id,
       marketId,
       outcomeId,
-      amount: Number(amount),
+      amount: numericAmount,
     })
     .returning();
   const createdBet = bet[0];
@@ -408,6 +427,11 @@ export async function handlePlaceBet(context: any) {
     set.status = 500;
     return { error: "Failed to place bet" };
   }
+
+  await db
+    .update(usersTable)
+    .set({ balance: sql`${usersTable.balance} - ${numericAmount}` })
+    .where(eq(usersTable.id, user.id));
 
   set.status = 201;
   return {
@@ -453,6 +477,35 @@ export async function handleResolveMarket(context: any) {
     return { error: "Outcome not found for this market" };
   }
 
+  const marketBets = await db
+    .select({
+      userId: betsTable.userId,
+      outcomeId: betsTable.outcomeId,
+      amount: betsTable.amount,
+    })
+    .from(betsTable)
+    .where(eq(betsTable.marketId, marketId));
+
+  const totalMarketPool = marketBets.reduce((sum, bet) => sum + Number(bet.amount), 0);
+  const winningBets = marketBets.filter((bet) => bet.outcomeId === outcomeId);
+  const winningPool = winningBets.reduce((sum, bet) => sum + Number(bet.amount), 0);
+
+  const payoutsByUser = new Map<number, number>();
+  if (winningPool > 0) {
+    for (const bet of winningBets) {
+      const payout = (Number(bet.amount) * totalMarketPool) / winningPool;
+      const current = payoutsByUser.get(bet.userId) ?? 0;
+      payoutsByUser.set(bet.userId, current + payout);
+    }
+  }
+
+  for (const [userId, payout] of payoutsByUser.entries()) {
+    await db
+      .update(usersTable)
+      .set({ balance: sql`${usersTable.balance} + ${Number(payout.toFixed(2))}` })
+      .where(eq(usersTable.id, userId));
+  }
+
   await db
     .update(marketsTable)
     .set({
@@ -465,6 +518,11 @@ export async function handleResolveMarket(context: any) {
     marketId,
     status: "resolved",
     resolvedOutcomeId: outcomeId,
+    totalPayoutDistributed: Number(
+      Array.from(payoutsByUser.values())
+        .reduce((sum, value) => sum + value, 0)
+        .toFixed(2),
+    ),
   };
 }
 
@@ -500,6 +558,16 @@ export async function handleArchiveMarket(context: any) {
     .from(betsTable)
     .where(eq(betsTable.marketId, marketId))
     .groupBy(betsTable.userId);
+
+  for (const refund of refundsRaw) {
+    const amountToRefund = Number(refund.totalRefund ?? 0);
+    if (amountToRefund <= 0) continue;
+
+    await db
+      .update(usersTable)
+      .set({ balance: sql`${usersTable.balance} + ${amountToRefund}` })
+      .where(eq(usersTable.id, refund.userId));
+  }
 
   await db
     .update(marketsTable)

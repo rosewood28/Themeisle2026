@@ -9,6 +9,10 @@ services:
       DB_FILE_NAME: /app/data/database.sqlite
       JWT_SECRET: 7bc15c2760b14b515bc33d4eb8dfbbf6
       SEED_DATABASE: "true"
+      ADMIN_BOOTSTRAP: "true"
+      ADMIN_EMAIL: admin@mail.com
+      ADMIN_PASSWORD: admin123
+      ADMIN_USERNAME: admin
     ports:
       - "4005:4001"
     volumes:
