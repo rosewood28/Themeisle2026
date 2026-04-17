@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import db from "../db";
 import { usersTable, marketsTable, marketOutcomesTable, betsTable } from "../db/schema";
 import { hashPassword, verifyPassword, type AuthTokenPayload } from "../lib/auth";
@@ -432,5 +432,161 @@ export async function handlePlaceBet({
     marketId: bet[0].marketId,
     outcomeId: bet[0].outcomeId,
     amount: bet[0].amount,
+  };
+}
+
+type ProfileBetsQuery = {
+  activePage?: number;
+  activePageSize?: number;
+  resolvedPage?: number;
+  resolvedPageSize?: number;
+};
+
+export async function handleGetProfileBets({
+  user,
+  query,
+}: {
+  user: typeof usersTable.$inferSelect;
+  query: ProfileBetsQuery;
+}) {
+  const activePageSize = Math.min(Math.max(query.activePageSize ?? 20, 1), 100);
+  const resolvedPageSize = Math.min(Math.max(query.resolvedPageSize ?? 20, 1), 100);
+  const activePage = Math.max(query.activePage ?? 1, 1);
+  const resolvedPage = Math.max(query.resolvedPage ?? 1, 1);
+
+  const [activeCountRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(betsTable)
+    .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
+    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "active")));
+
+  const [resolvedCountRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(betsTable)
+    .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
+    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "resolved")));
+
+  const activeTotal = Number(activeCountRow?.count ?? 0);
+  const resolvedTotal = Number(resolvedCountRow?.count ?? 0);
+  const activeTotalPages = Math.ceil(activeTotal / activePageSize);
+  const resolvedTotalPages = Math.ceil(resolvedTotal / resolvedPageSize);
+  const safeActivePage = activeTotalPages > 0 ? Math.min(activePage, activeTotalPages) : 1;
+  const safeResolvedPage = resolvedTotalPages > 0 ? Math.min(resolvedPage, resolvedTotalPages) : 1;
+
+  const activeBets = await db
+    .select({
+      betId: betsTable.id,
+      marketId: marketsTable.id,
+      marketTitle: marketsTable.title,
+      outcomeId: marketOutcomesTable.id,
+      outcomeTitle: marketOutcomesTable.title,
+      amount: betsTable.amount,
+      placedAt: betsTable.createdAt,
+    })
+    .from(betsTable)
+    .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
+    .innerJoin(marketOutcomesTable, eq(marketOutcomesTable.id, betsTable.outcomeId))
+    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "active")))
+    .orderBy(desc(betsTable.createdAt))
+    .limit(activePageSize)
+    .offset((safeActivePage - 1) * activePageSize);
+
+  const resolvedBets = await db
+    .select({
+      betId: betsTable.id,
+      marketId: marketsTable.id,
+      marketTitle: marketsTable.title,
+      resolvedOutcomeId: marketsTable.resolvedOutcomeId,
+      outcomeId: marketOutcomesTable.id,
+      outcomeTitle: marketOutcomesTable.title,
+      amount: betsTable.amount,
+      placedAt: betsTable.createdAt,
+    })
+    .from(betsTable)
+    .innerJoin(marketsTable, eq(marketsTable.id, betsTable.marketId))
+    .innerJoin(marketOutcomesTable, eq(marketOutcomesTable.id, betsTable.outcomeId))
+    .where(and(eq(betsTable.userId, user.id), eq(marketsTable.status, "resolved")))
+    .orderBy(desc(betsTable.createdAt))
+    .limit(resolvedPageSize)
+    .offset((safeResolvedPage - 1) * resolvedPageSize);
+
+  const activeMarketIds = Array.from(new Set(activeBets.map((bet) => bet.marketId)));
+  const activeOutcomeIds = Array.from(new Set(activeBets.map((bet) => bet.outcomeId)));
+  const marketTotalsById = new Map<number, number>();
+  const outcomeTotalsById = new Map<number, number>();
+
+  if (activeMarketIds.length > 0) {
+    const marketTotals = await db
+      .select({
+        marketId: betsTable.marketId,
+        totalBets: sql<number>`coalesce(sum(${betsTable.amount}), 0)`,
+      })
+      .from(betsTable)
+      .where(inArray(betsTable.marketId, activeMarketIds))
+      .groupBy(betsTable.marketId);
+
+    for (const item of marketTotals) {
+      marketTotalsById.set(item.marketId, Number(item.totalBets ?? 0));
+    }
+  }
+
+  if (activeOutcomeIds.length > 0) {
+    const outcomeTotals = await db
+      .select({
+        outcomeId: betsTable.outcomeId,
+        totalBets: sql<number>`coalesce(sum(${betsTable.amount}), 0)`,
+      })
+      .from(betsTable)
+      .where(inArray(betsTable.outcomeId, activeOutcomeIds))
+      .groupBy(betsTable.outcomeId);
+
+    for (const item of outcomeTotals) {
+      outcomeTotalsById.set(item.outcomeId, Number(item.totalBets ?? 0));
+    }
+  }
+
+  return {
+    active: {
+      items: activeBets.map((bet) => {
+        const marketTotal = marketTotalsById.get(bet.marketId) ?? 0;
+        const outcomeTotal = outcomeTotalsById.get(bet.outcomeId) ?? 0;
+        const currentOdds = marketTotal > 0 ? Number(((outcomeTotal / marketTotal) * 100).toFixed(2)) : 0;
+
+        return {
+          betId: bet.betId,
+          marketId: bet.marketId,
+          marketTitle: bet.marketTitle,
+          outcomeId: bet.outcomeId,
+          outcomeTitle: bet.outcomeTitle,
+          amount: bet.amount,
+          currentOdds,
+          placedAt: bet.placedAt,
+        };
+      }),
+      page: safeActivePage,
+      pageSize: activePageSize,
+      total: activeTotal,
+      totalPages: activeTotalPages,
+      hasNext: safeActivePage < activeTotalPages,
+      hasPrev: safeActivePage > 1,
+    },
+    resolved: {
+      items: resolvedBets.map((bet) => ({
+        betId: bet.betId,
+        marketId: bet.marketId,
+        marketTitle: bet.marketTitle,
+        outcomeId: bet.outcomeId,
+        outcomeTitle: bet.outcomeTitle,
+        amount: bet.amount,
+        result: bet.resolvedOutcomeId === bet.outcomeId ? "won" : "lost",
+        placedAt: bet.placedAt,
+      })),
+      page: safeResolvedPage,
+      pageSize: resolvedPageSize,
+      total: resolvedTotal,
+      totalPages: resolvedTotalPages,
+      hasNext: safeResolvedPage < resolvedTotalPages,
+      hasPrev: safeResolvedPage > 1,
+    },
   };
 }

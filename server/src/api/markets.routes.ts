@@ -1,6 +1,12 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { handleCreateMarket, handleListMarkets, handleGetMarket, handlePlaceBet } from "./handlers";
+import {
+  handleCreateMarket,
+  handleListMarkets,
+  handleGetMarket,
+  handlePlaceBet,
+  handleGetProfileBets,
+} from "./handlers";
 
 export const marketRoutes = new Elysia({ prefix: "/api/markets" })
   .use(authMiddleware)
@@ -18,6 +24,25 @@ export const marketRoutes = new Elysia({ prefix: "/api/markets" })
       id: t.Numeric(),
     }),
   })
+  .guard(
+    {
+      beforeHandle({ user, set }) {
+        if (!user) {
+          set.status = 401;
+          return { error: "Unauthorized" };
+        }
+      },
+    },
+    (app) =>
+      app.get("/profile/bets", handleGetProfileBets, {
+        query: t.Object({
+          activePage: t.Optional(t.Numeric()),
+          activePageSize: t.Optional(t.Numeric()),
+          resolvedPage: t.Optional(t.Numeric()),
+          resolvedPageSize: t.Optional(t.Numeric()),
+        }),
+      }),
+  )
   .guard(
     {
       beforeHandle({ user, set }) {
